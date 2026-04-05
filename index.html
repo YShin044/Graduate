@@ -8,6 +8,12 @@
 <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* Prevent black flash on iOS Safari during transitions */
+html {
+    background: #FFF0F5;
+    -webkit-tap-highlight-color: transparent;
+}
+
 :root {
     --rose:        #C8758A;
     --rose-lt:     #E8A4B8;
@@ -49,6 +55,8 @@ body {
     background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 300% 300%;
     animation: meshShift 16s ease infinite;
     pointer-events: none;
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
 }
 @keyframes meshShift {
     0%, 100% { background-position: 0 0, 0 0, 0 0, 0 0, 0% 50%; }
@@ -85,8 +93,14 @@ body {
     flex-direction: column; padding: 24px;
     transition: opacity 0.75s ease, transform 0.75s cubic-bezier(0.4,0,0.2,1);
     z-index: 10;
+    /* Fix iOS/Android render glitch */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    will-change: opacity, transform;
 }
-.scene.out { opacity: 0; transform: scale(0.96); pointer-events: none; }
+.scene.out { opacity: 0; transform: translateZ(0) scale(0.96); pointer-events: none; }
 .scene.hidden { display: none; }
 
 /* ═══════════════════════════════════
@@ -260,6 +274,12 @@ body {
 #s3 {
     background: linear-gradient(160deg, #1C0E14 0%, #2A1220 50%, #1C0E14 100%);
     z-index: 12;
+    /* Fix iOS/Android black bleed: force GPU layer + prevent transparent edges */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    isolation: isolate;
 }
 /* Rose dust particles */
 .rose-dust { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
@@ -616,16 +636,113 @@ body {
    RESPONSIVE
 ═══════════════════════════════════ */
 @media (max-width: 560px) {
-    .card-photo-section { flex-direction: column; align-items: center; padding: 28px 24px; }
-    .polaroid { transform: rotate(0); }
-    .card-side-content { padding-top: 0; }
-    .card-header, .card-info, .card-footer { padding-left: 24px; padding-right: 24px; }
-    .info-row { grid-template-columns: 1fr; }
-    .info-cell:not(:last-child)::after { top: auto; bottom: 0; right: 15%; height: 1px; width: 70%; background: rgba(200,117,138,0.18); }
-    .card-name { font-size: 2.8rem; }
-    .envelope { width: 290px; height: 196px; }
-    .env-flap { border-left-width: 145px; border-right-width: 145px; border-top-width: 112px; }
+    /* Card overlay: center everything */
+    #card-overlay {
+        padding: 16px 12px 40px;
+        align-items: flex-start;
+    }
+    .inv-card {
+        width: 100%;
+        margin: 0 auto;
+    }
+
+    /* Header */
+    .card-header {
+        padding: 40px 20px 28px;
+        text-align: center;
+    }
+    .card-name {
+        font-size: 2.6rem;
+        text-align: center;
+    }
+    .card-eyebrow {
+        text-align: center;
+        font-size: 0.68rem;
+        letter-spacing: 0.18em;
+    }
+
+    /* Photo section: stack vertically, all centered */
+    .card-photo-section {
+        flex-direction: column;
+        align-items: center;
+        padding: 28px 20px;
+        gap: 24px;
+        text-align: center;
+    }
+    .polaroid {
+        transform: rotate(0);
+        margin: 0 auto;
+    }
+    .polaroid img {
+        width: 140px;
+        height: 185px;
+    }
+
+    /* Side content: center text on mobile */
+    .card-side-content {
+        padding-top: 0;
+        text-align: center;
+        width: 100%;
+    }
+    .card-invite-label {
+        text-align: center;
+    }
+    .card-invite-title {
+        text-align: center;
+        font-size: 1.7rem;
+    }
+    .card-quote {
+        text-align: left;
+        padding-left: 20px;
+    }
+    .card-quote::before {
+        left: 0;
+    }
+
+    /* Info section */
+    .card-info {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+    .info-row {
+        grid-template-columns: 1fr;
+    }
+    .info-cell {
+        padding: 18px 12px;
+        text-align: center;
+    }
+    .info-cell:not(:last-child)::after {
+        top: auto;
+        bottom: 0;
+        right: 15%;
+        height: 1px;
+        width: 70%;
+        background: rgba(200,117,138,0.18);
+    }
+
+    /* Footer */
+    .card-footer {
+        padding-left: 20px;
+        padding-right: 20px;
+        text-align: center;
+    }
+
+    /* Envelope */
+    .envelope {
+        width: 290px;
+        height: 196px;
+    }
+    .env-flap {
+        border-left-width: 145px;
+        border-right-width: 145px;
+        border-top-width: 112px;
+    }
     .env-tri-l, .env-tri-r { display: none; }
+
+    /* Scenes padding */
+    .scene {
+        padding: 16px;
+    }
 }
 </style>
 </head>
@@ -864,12 +981,16 @@ body {
 
     /* ─── Scene transition ─── */
     function showScene(from, to) {
-        from.classList.add('out');
-        setTimeout(() => {
-            from.classList.add('hidden');
-            from.classList.remove('out');
-            to.classList.remove('hidden');
-        }, 750);
+        // Show the incoming scene first (behind) to prevent black flash
+        to.classList.remove('hidden');
+        // Small delay then fade out the old scene
+        requestAnimationFrame(() => {
+            from.classList.add('out');
+            setTimeout(() => {
+                from.classList.add('hidden');
+                from.classList.remove('out');
+            }, 800);
+        });
     }
 
     /* ─── Floating elements — pink / gold theme ─── */
